@@ -76,34 +76,52 @@ function draw() {
         ctx.restore();
         }
     }
-    // Draw and update ripples
-    strokeWeight(2);
+
+    let ctx = drawingContext;
+    ctx.save();
+
+    ctx.globalCompositeOperation = 'lighter';
+
     noFill();
-    
+
     for (let i = ripples.length - 1; i >= 0; i--) {
         let ripple = ripples[i];
-        
-        // Check if ripple should start expanding based on delay
+
         if (ripple.age >= ripple.delay) {
             ripple.radius += ripple.speed;
         }
-        ripple.age += 1;
-        
-        // Only draw if it has started expanding
+        ripple.age++;
+
         if (ripple.age >= ripple.delay) {
-            // Fade out the ripple as it expands
-            let alpha = map(ripple.radius, 0, ripple.maxRadius, 255, 50);
-            stroke(255, alpha);
-            
-            // Draw the ripple
-            circle(ripple.x, ripple.y, ripple.radius * 2);
+
+            let progress = ripple.radius / ripple.maxRadius;
+
+            // Stronger, more readable fade
+            let alpha = pow(1 - progress, 2.0) * 200;
+
+            let shimmer = noise(ripple.x * 0.01, ripple.y * 0.01, millis() * 0.001) * 30;
+
+            stroke(120 + shimmer, 255, 150 + shimmer * 0.2, alpha);
+
+            // 🌊 MUCH bigger wave expansion
+            let size = ripple.radius * 3.6;
+
+            // 💪 thicker energy ring
+            strokeWeight(5);
+
+            ellipse(ripple.x, ripple.y, size, size);
+
+            // ✨ outer glow shell
+            strokeWeight(2);
+            stroke(120, 255, 150, alpha * 0.35);
+            ellipse(ripple.x, ripple.y, size * 1.25, size * 1.25);
         }
-        
-        // Remove ripple if it's too large
+
         if (ripple.radius > ripple.maxRadius) {
             ripples.splice(i, 1);
         }
     }
+    ctx.restore();
 }
 
 function mousePressed() {
