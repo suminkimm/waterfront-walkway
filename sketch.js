@@ -1,150 +1,295 @@
-let video;
-let ripples = [];
-let lastRippleTime = 0;
-let mouseHoldStart = 0;
+// Paint-stamp canvas: click to create ephemeral stamped shapes
+let stamps = [];
 
-async function setup() {
-    createCanvas(windowWidth, windowHeight);
-    pixelDensity(min(2, window.devicePixelRatio));
-    
-    video = document.getElementById('bg-video');
-    if (video) {
-        video.play().catch(err => {
-            console.log("Autoplay blocked, waiting for user interaction:", err);
-        });
-    }
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  pixelDensity(1);
+  background(255);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  background(255);
 }
 
 function draw() {
-    background(220);
-    if (video) {
-        let ctx = drawingContext;
-        ctx.drawImage(video, 0, 0, width, height);
-    }
-    
-    // Soft green light while mouse is held down
-    // Soft green bioluminescent glow
-    if (mouseIsPressed) {
-        let holdTime = millis() - mouseHoldStart;
-        let showGlow = mouseIsPressed && holdTime > 150; // 150ms delay
-        let ctx = drawingContext;
+  background(255);
 
-        if (showGlow) {
-            ctx.save();
+  const now = millis();
 
-        ctx.globalCompositeOperation = 'lighter';
-        noStroke();
+  for (let i = stamps.length - 1; i >= 0; i--) {
+    const s = stamps[i];
 
-        let x = mouseX;
-        let y = mouseY + 10;
+    let alpha = 255;
 
-        // MUCH slower breathing cycle
-        let t = millis() * 0.0012;
+    // ONLY fade after mouseReleased()
+    if (s.isFading) {
 
-        // Smooth “inhale/exhale”
-        let breathe = 0.5 + 0.5 * sin(t);
+      // start fade timer once
+      if (s.fadeStartTime === null) {
+        s.fadeStartTime = now;
+      }
 
-        // Ease the pulse so it lingers at peak (more biological)
-        breathe = pow(breathe, 1.6);
+      const age = now - s.fadeStartTime;
 
-        // VERY subtle drift (avoid affecting shape too much)
-        let drift = noise(t * 0.3) * 0.08; // tiny only
-        breathe += drift;
+      if (age > s.lifespan) {
+        stamps.splice(i, 1);
+        continue;
+      }
 
-        let baseSize = 40 + 25 * breathe;
-
-        for (let i = 12; i > 0; i--) {
-            let layerT = i / 12;
-
-            let size = baseSize * (1 + layerT * 3.0);
-
-            let alpha = pow(1 - layerT, 2.4) * 130;
-
-            // Keep shimmer but decouple it from size stability
-            let shimmer = noise(i * 0.3, t * 0.5) * 18;
-
-            fill(120 + shimmer, 255, 150 + shimmer * 0.2, alpha);
-
-            ellipse(
-                x + sin(t * 0.8 + i * 0.4) * 1.5,
-                y + cos(t * 0.7 + i * 0.3) * 1.5,
-                size,
-                size
-            );
-        }
-
-        ctx.restore();
-        }
+      alpha = map(age, 0, s.lifespan, 255, 0);
     }
 
-    let ctx = drawingContext;
-    ctx.save();
+    // draw pre-rendered graphic with tint alpha
+    push();
+    translate(s.x, s.y);
+    rotate(s.rot);
 
-    ctx.globalCompositeOperation = 'lighter';
+    tint(255, alpha);
 
-    noFill();
+    imageMode(CENTER);
+    image(s.gfx, 0, 0, s.size, s.size);
 
-    for (let i = ripples.length - 1; i >= 0; i--) {
-        let ripple = ripples[i];
-
-        if (ripple.age >= ripple.delay) {
-            ripple.radius += ripple.speed;
-        }
-        ripple.age++;
-
-        if (ripple.age >= ripple.delay) {
-
-            let progress = ripple.radius / ripple.maxRadius;
-
-            // Stronger, more readable fade
-            let alpha = pow(1 - progress, 2.0) * 200;
-
-            let shimmer = noise(ripple.x * 0.01, ripple.y * 0.01, millis() * 0.001) * 30;
-
-            stroke(120 + shimmer, 255, 150 + shimmer * 0.2, alpha);
-
-            // 🌊 MUCH bigger wave expansion
-            let size = ripple.radius * 3.6;
-
-            // 💪 thicker energy ring
-            strokeWeight(5);
-
-            ellipse(ripple.x, ripple.y, size, size);
-
-            // ✨ outer glow shell
-            strokeWeight(2);
-            stroke(120, 255, 150, alpha * 0.35);
-            ellipse(ripple.x, ripple.y, size * 1.25, size * 1.25);
-        }
-
-        if (ripple.radius > ripple.maxRadius) {
-            ripples.splice(i, 1);
-        }
-    }
-    ctx.restore();
+    noTint();
+    pop();
+  }
 }
 
+// create a stamped paint shape at the click point
 function mousePressed() {
-    mouseHoldStart = millis();
-    // Create ripples
-    ripples.push({
-        x: mouseX,
-        y: mouseY,
-        radius: 0,
-        maxRadius: 80,
-        age: 0,
-        delay: 0,
-        speed: 0.7
-    });
-    ripples.push({
-        x: mouseX,
-        y: mouseY,
-        radius: 0,
-        maxRadius: 80,
-        age: 0,
-        delay: 25,
-        speed: 1.0
-    });
-    
-    return false;
+
+  const x = mouseX;
+  const y = mouseY;
+
+  // pick a random shape type
+  const types = ['blob','roughCircle','roughRect','star','splotch','oval'];
+  const type = random(types);
+
+  const size = random(40, 180);
+
+  // use vibrant HSB colors: high saturation and brightness
+  const color = {
+    mode: 'HSB',
+    h: floor(random(0, 360)),
+    s: floor(random(80, 100)),
+    b: floor(random(75, 100))
+  };
+
+  const gfx = createStampGraphic(size, color, type);
+  const rot = random(TWO_PI);
+  const lifespan = 5000;
+
+  stamps.push({
+    gfx,
+    x,
+    y,
+    rot,
+    size,
+    created: millis(),
+    lifespan,
+
+    // NEW
+    isFading: false,
+    fadeStartTime: null
+  });
+
+  return false;
+}
+
+function touchStarted() {
+  mousePressed();
+  return false;
+}
+
+function mouseReleased() {
+
+  // begin fading all stamps once released
+  for (let s of stamps) {
+    s.isFading = true;
+  }
+
+  return false;
+}
+
+// Create a p5.Graphics containing a stamped shape
+function createStampGraphic(size, color, type) {
+  const g = createGraphics(size, size);
+  g.pixelDensity(1);
+  g.clear();
+  g.noStroke();
+
+  // center
+  const cx = size/2;
+  const cy = size/2;
+
+  g.push();
+  g.translate(cx, cy);
+
+  // set color mode and convert to array expected by helpers
+  let colorArr = color;
+
+  if (color && color.mode === 'HSB') {
+    g.colorMode(HSB, 360, 100, 100);
+    colorArr = [color.h, color.s, color.b];
+  } else {
+    g.colorMode(RGB, 255);
+  }
+
+  if (type === 'roughCircle') {
+    drawRoughCircle(g, 0, 0, size*0.8, colorArr);
+
+  } else if (type === 'roughRect') {
+    drawRoughRect(g, -size*0.35, -size*0.25, size*0.7, size*0.5, colorArr);
+
+  } else if (type === 'star') {
+    drawStar(g, 0, 0, size*0.18, size*0.4, 5, colorArr);
+
+  } else if (type === 'splotch') {
+    drawSplotch(g, 0, 0, size*0.45, colorArr);
+
+  } else if (type === 'oval') {
+    drawRoughEllipse(g, 0, 0, size*0.6, size*0.35, colorArr);
+
+  } else {
+    drawSplotch(g, 0, 0, size*0.45, colorArr);
+  }
+
+  g.pop();
+  return g;
+}
+
+// helpers to draw rough hand-painted shapes onto a graphics buffer
+function drawRoughCircle(g, x, y, d, color) {
+  g.fill(color[0], color[1], color[2]);
+
+  g.beginShape();
+
+  const r = d/2;
+
+  for (let a = 0; a < TWO_PI; a += radians(10)) {
+    const rr = r + random(-r*0.12, r*0.12);
+
+    g.vertex(
+      x + cos(a)*rr,
+      y + sin(a)*rr
+    );
+  }
+
+  g.endShape(CLOSE);
+}
+
+function drawRoughEllipse(g, x, y, w, h, color) {
+  g.fill(color[0], color[1], color[2]);
+
+  g.beginShape();
+
+  for (let a = 0; a < TWO_PI; a += radians(8)) {
+
+    const rx = w/2 + random(-w*0.06, w*0.06);
+    const ry = h/2 + random(-h*0.06, h*0.06);
+
+    g.vertex(
+      x + cos(a)*rx,
+      y + sin(a)*ry
+    );
+  }
+
+  g.endShape(CLOSE);
+}
+
+function drawRoughRect(g, x, y, w, h, color) {
+  g.fill(color[0], color[1], color[2]);
+
+  g.beginShape();
+
+  const steps = 20;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i/steps;
+
+    const px = lerp(x, x+w, t) + random(-w*0.04, w*0.04);
+    const py = y + random(-h*0.05, h*0.05);
+
+    g.vertex(px, py);
+  }
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i/steps;
+
+    const px = x + w + random(-w*0.04, w*0.04);
+    const py = lerp(y, y+h, t) + random(-h*0.05, h*0.05);
+
+    g.vertex(px, py);
+  }
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i/steps;
+
+    const px = lerp(x+w, x, t) + random(-w*0.04, w*0.04);
+    const py = y + h + random(-h*0.05, h*0.05);
+
+    g.vertex(px, py);
+  }
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i/steps;
+
+    const px = x + random(-w*0.04, w*0.04);
+    const py = lerp(y+h, y, t) + random(-h*0.05, h*0.05);
+
+    g.vertex(px, py);
+  }
+
+  g.endShape(CLOSE);
+}
+
+function drawStar(g, x, y, r1, r2, npoints, color) {
+
+  g.fill(color[0], color[1], color[2]);
+
+  g.beginShape();
+
+  const angle = TWO_PI / npoints;
+
+  for (let a = 0; a < TWO_PI; a += angle) {
+
+    const ax = x + cos(a) * (r2 + random(-r2*0.08, r2*0.08));
+    const ay = y + sin(a) * (r2 + random(-r2*0.08, r2*0.08));
+
+    g.vertex(ax, ay);
+
+    const bx = x + cos(a + angle/2) * (r1 + random(-r1*0.08, r1*0.08));
+    const by = y + sin(a + angle/2) * (r1 + random(-r1*0.08, r1*0.08));
+
+    g.vertex(bx, by);
+  }
+
+  g.endShape(CLOSE);
+}
+
+function drawSplotch(g, x, y, size, color) {
+
+  g.fill(color[0], color[1], color[2]);
+
+  const steps = 18;
+
+  g.beginShape();
+
+  for (let i = 0; i < steps; i++) {
+
+    const a = map(i, 0, steps, 0, TWO_PI);
+
+    const r = size * 0.5 * (
+      0.6 + noise(i*0.3, millis()*0.0005)
+    );
+
+    const rr = r + random(-size*0.06, size*0.06);
+
+    g.vertex(
+      x + cos(a) * rr,
+      y + sin(a) * rr
+    );
+  }
+
+  g.endShape(CLOSE);
 }
